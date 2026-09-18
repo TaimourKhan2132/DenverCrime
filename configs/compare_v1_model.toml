@@ -1,0 +1,23 @@
+# Comparison: the first version's model (features and LightGBM settings) on the SAME cleaned
+# data and the SAME rolling test windows as default.toml. Isolates what the new features,
+# per-target feature selection and tuning add.
+#   python -m denvercrime --config configs/compare_v1_model.toml prepare
+#   python -m denvercrime --config configs/compare_v1_model.toml backtest
+extends = "default.toml"
+
+[data]
+processed_dir = "data/processed/compare_v1_model"
+
+[features]
+ewm_halflives = []
+trend_ratios = false
+outer_ring = 0
+holidays = false
+drop_groups = []
+target_drop_groups = {}
+
+[model]
+overrides = {}
+
+[output]
+runs_dir = "outputs/compare_v1_model/runs"

@@ -1,0 +1,17 @@
+# Comparison: the final model WITHOUT excluding the airport and the institutional addresses.
+# The targets differ from default.toml (they include those records), so compare the hotspot
+# metrics qualitatively: how much "predictability" came from places where crime is recorded
+# rather than committed.
+#   python -m denvercrime --config configs/compare_uncleaned.toml prepare
+#   python -m denvercrime --config configs/compare_uncleaned.toml backtest
+extends = "default.toml"
+
+[data]
+processed_dir = "data/processed/compare_uncleaned"
+
+[cleaning]
+exclude_neighborhoods = []
+exclude_addresses = []
+
+[output]
+runs_dir = "outputs/compare_uncleaned/runs"

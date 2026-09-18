@@ -18,6 +18,8 @@ UNMAPPED = "unmapped"
 class CleaningReport:
     steps: list[tuple[str, int]] = field(default_factory=list)
     unmapped_categories: dict[str, int] = field(default_factory=dict)
+    excluded: dict[str, int] = field(default_factory=dict)
+    long_window_offenses: int = 0
     as_of: str = ""
     cutoff: str = ""
 
@@ -30,6 +32,8 @@ class CleaningReport:
             "as_of": self.as_of,
             "cutoff": self.cutoff,
             "steps": [{"step": s, "rows": n} for s, n in self.steps],
+            "excluded_places": self.excluded,
+            "long_window_offenses": self.long_window_offenses,
             "unmapped_categories": self.unmapped_categories,
         }
 
@@ -55,6 +59,11 @@ def clean_offenses(df: pd.DataFrame, cfg: Config) -> tuple[pd.DataFrame, Cleanin
     df = df[in_box]  # also drops missing (NaN) and zeroed coordinates
     report.record("valid coordinates inside Denver bbox", df)
 
+    df = exclude_places(df, cfg, report)
+
+    window = df["LAST_OCCURRENCE_DATE"] - df["FIRST_OCCURRENCE_DATE"]
+    report.long_window_offenses = int((window > pd.Timedelta(days=cfg.cleaning.long_window_days)).sum())
+
     start = pd.Timestamp(cfg.data.start_date)
     occurred = df["FIRST_OCCURRENCE_DATE"]
     df = df[(occurred >= start) & (occurred < cutoff)]
@@ -69,6 +78,27 @@ def clean_offenses(df: pd.DataFrame, cfg: Config) -> tuple[pd.DataFrame, Cleanin
     df = df[df["group"] != UNMAPPED]
     report.record("category mapped to a group", df)
     return df, report
+
+
+def exclude_places(df: pd.DataFrame, cfg: Config, report: CleaningReport) -> pd.DataFrame:
+    """Drop offenses at configured neighbourhoods (e.g. the airport) and institutional addresses.
+
+    The report records how many offense rows each rule removed.
+    """
+    rules = cfg.cleaning
+    if rules.exclude_neighborhoods and "NEIGHBORHOOD_ID" in df:
+        hood = df["NEIGHBORHOOD_ID"].str.lower()
+        for name in rules.exclude_neighborhoods:
+            report.excluded[f"neighborhood:{name}"] = int((hood == name).sum())
+        df = df[~hood.isin(rules.exclude_neighborhoods).fillna(False)]
+        report.record("excluded neighbourhoods", df)
+    if rules.exclude_addresses and "INCIDENT_ADDRESS" in df:
+        address = df["INCIDENT_ADDRESS"].fillna("").str.upper().str.split().str.join(" ")
+        for name in rules.exclude_addresses:
+            report.excluded[f"address:{name}"] = int((address == name).sum())
+        df = df[~address.isin(rules.exclude_addresses)]
+        report.record("excluded institutional addresses", df)
+    return df
 
 
 def to_incidents(offenses: pd.DataFrame) -> pd.DataFrame:

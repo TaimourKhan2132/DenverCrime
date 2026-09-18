@@ -80,7 +80,8 @@ def _row(inc_id, k, cat, first, last, reported, lat, lon, is_crime=1, is_traffic
 
 
 def add_dirty_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Rows the cleaner must drop: bad coordinates, traffic, and an unmapped category."""
+    """Rows the cleaner must drop: bad coordinates, traffic, an unmapped category, the airport
+    neighbourhood and an institutional address."""
     t = START + pd.Timedelta(weeks=30)
     bad = [
         _row("BAD1", 0, "larceny", t, pd.NaT, t, np.nan, np.nan),
@@ -88,6 +89,8 @@ def add_dirty_rows(df: pd.DataFrame) -> pd.DataFrame:
         _row("BAD3", 0, "larceny", t, pd.NaT, t, 40.5, -104.99),          # north of the bbox
         _row("BAD4", 0, "larceny", t, pd.NaT, t, 39.74, -104.99, is_traffic=1),
         _row("BAD5", 0, "mystery-category", t, pd.NaT, t, 39.74, -104.99),
+        {**_row("BAD6", 0, "auto-theft", t, pd.NaT, t, 39.85, -104.67), "NEIGHBORHOOD_ID": "dia"},
+        {**_row("BAD7", 0, "aggravated-assault", t, pd.NaT, t, 39.73, -104.99), "INCIDENT_ADDRESS": "490  w colfax ave"},
     ]
     out = pd.concat([df, pd.DataFrame(bad)], ignore_index=True)
     out["OBJECTID"] = np.arange(1, len(out) + 1)
@@ -103,6 +106,7 @@ def make_config(tmp_path, **overrides) -> Config:
     raw["panel"]["min_train_incidents"] = 3
     raw["model"].update(num_boost_round=60, early_stopping_rounds=15)
     raw["model"]["lightgbm"].update(min_data_in_leaf=20, learning_rate=0.1)
+    raw["tuning"]["n_trials"] = 3
     for dotted, value in overrides.items():
         section, key = dotted.split("__")
         raw[section][key] = value

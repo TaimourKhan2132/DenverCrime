@@ -17,11 +17,35 @@ drop_recent_days = 30
 # (LAST_OCCURRENCE_DATE is not shifted). "auto" detects and undoes this; or set a number of hours.
 csv_time_shift_hours = "auto"
 
-[data.bbox]                      # generous box around the City and County of Denver (incl. DIA)
+[data.bbox]                      # generous box around the City and County of Denver
 min_lat = 39.60
 max_lat = 39.92
 min_lon = -105.12
 max_lon = -104.59
+
+# Places where offenses are *recorded* rather than committed, or that are not neighbourhoods.
+# Each entry was checked on 2026-09-18; see the README "Data cleaning" section for the evidence.
+[cleaning]
+exclude_neighborhoods = [
+    "dia",                       # Denver International Airport: 5% of all incidents, mostly parking-lot theft
+]
+long_window_days = 7             # offenses spanning longer than this are kept in their first week, and counted in the report
+
+[[cleaning.exclude_addresses]]
+address = "1331 N CHEROKEE ST"
+reason = "Denver Police headquarters: 95% 'all-other-crimes' (reports and warrants processed there)"
+
+[[cleaning.exclude_addresses]]
+address = "490 W COLFAX AVE"
+reason = "Downtown Detention Center (Van Cise-Simonet): offenses inside the jail"
+
+[[cleaning.exclude_addresses]]
+address = "10500 E SMITH RD"
+reason = "Denver County Jail: offenses inside the jail"
+
+[[cleaning.exclude_addresses]]
+address = "777 N BANNOCK ST"
+reason = "Denver Health, the city's Level I trauma centre: victims reported at the hospital"
 
 # OFFENSE_CATEGORY_ID -> forecasting group. Every category in the data must appear exactly once.
 [groups]
@@ -38,11 +62,24 @@ min_train_incidents = 10         # cells with fewer incidents in the training pe
 horizon = 1                      # predict week t using only data up to week t - horizon
 lags = [1, 2, 3, 4, 52]          # every lag must be >= horizon
 rolling_windows = [4, 13, 26, 52]
-neighbor_ring = 1                # H3 grid distance used for spatial-lag features
+ewm_halflives = [4, 13, 52]      # exponentially weighted means (weeks); [] disables
+trend_ratios = true              # short-term vs 52-week level, e.g. mean4 / mean52
+neighbor_ring = 1                # H3 grid distance for the inner spatial-lag features
+outer_ring = 2                   # annulus (ring 2 only) for a wider spatial lag; 0 disables
+holidays = true                  # number of US federal holidays in the target week (known in advance)
+# Feature groups dropped after the validation-year ablation (`python -m denvercrime ablate`).
+# The dropped groups are still built, so the ablation can re-evaluate them on a new snapshot.
+# Seed-to-seed noise in validation deviance is ~0.0003; see README "Model selection".
+drop_groups = ["trend", "outer_spatial", "holidays"]   # no gain for either target
+
+[features.target_drop_groups]
+property = ["cross_group"]       # other groups' history hurt property validation deviance (+0.0021)
 
 [split]
 train_end = "2024-06-30"         # last day of the training period
 val_end = "2025-06-30"           # validation = (train_end, val_end]; test = after val_end
+test_folds = 4                   # the test period is split into this many consecutive windows,
+                                 # and the model is retrained on all earlier weeks before each one
 min_history_weeks = 13           # drop the first weeks, where rolling features are mostly empty
 
 [model]
@@ -50,7 +87,7 @@ targets = ["property", "person"]
 num_boost_round = 3000
 early_stopping_rounds = 100
 
-[model.lightgbm]
+[model.lightgbm]                 # shared LightGBM parameters
 objective = "poisson"
 learning_rate = 0.03
 num_leaves = 31
@@ -61,6 +98,33 @@ bagging_freq = 1
 lambda_l2 = 1.0
 seed = 42
 verbosity = -1
+
+# Per-target overrides, chosen on the validation year by `python -m denvercrime tune`
+# (40 Optuna trials each; values rounded). Both targets preferred a Tweedie objective with a
+# variance power ~1.2, i.e. counts somewhat more variable than Poisson.
+[model.overrides.property]       # validation deviance 1.1250 (shared defaults: 1.1268)
+learning_rate = 0.0757
+num_leaves = 12
+min_data_in_leaf = 101
+feature_fraction = 0.632
+bagging_fraction = 0.638
+lambda_l2 = 0.00356
+objective = "tweedie"
+tweedie_variance_power = 1.201
+
+[model.overrides.person]         # validation deviance 0.5945 (shared defaults: 0.5955)
+learning_rate = 0.0286
+num_leaves = 9
+min_data_in_leaf = 284
+feature_fraction = 0.721
+bagging_fraction = 0.524
+lambda_l2 = 0.553
+objective = "tweedie"
+tweedie_variance_power = 1.273
+
+[tuning]
+n_trials = 40
+seed = 42
 
 [evaluation]
 hotspot_k = [0.01, 0.05, 0.10]   # share of city area flagged as hotspots each week
