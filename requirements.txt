@@ -6,4 +6,6 @@ lightgbm>=4.3
 requests>=2.31
 folium>=0.17
 matplotlib>=3.8
+scipy>=1.11
+optuna>=3.6
 pytest>=8

@@ -5,8 +5,10 @@ import pytest
 from denvercrime.evaluation.metrics import (
     evaluate,
     hotspot_metrics,
+    occurrence_metrics,
     paired_weekly_deviance,
     poisson_deviance,
+    roc_auc,
     select_top_area,
 )
 
@@ -59,8 +61,19 @@ def test_paired_weekly_deviance_favours_the_better_predictor():
     assert out["weeks"] == 20 and out["weeks_model_better"] >= 18
 
 
+def test_roc_auc_and_occurrence_metrics():
+    assert roc_auc(np.array([0, 0, 1, 1]), np.array([0.1, 0.4, 0.35, 0.8])) == pytest.approx(0.75)
+    assert roc_auc(np.array([1, 0]), np.array([0.5, 0.5])) == pytest.approx(0.5)  # ties count half
+    y = np.array([0, 0, 1, 3])
+    pred = np.array([0.1, 1.0, 2.0, 0.2])  # P(>=1) = 0.10, 0.63, 0.86, 0.18 -> called: F T T F
+    out = occurrence_metrics(y, pred)
+    assert out["occ_accuracy"] == pytest.approx(0.5)
+    assert out["occ_precision"] == pytest.approx(0.5) and out["occ_recall"] == pytest.approx(0.5)
+    assert out["occ_f1"] == pytest.approx(0.5)
+
+
 def test_evaluate_reports_all_metrics():
     frame = _week(np.array([1.0, 2.0, 0.5, 0.0]), np.array([1.0, 3.0, 0.0, 0.0]))
     out = evaluate(frame, "pred", "y", (0.25, 0.5))
-    assert {"mae", "rmse", "poisson_deviance", "pai@25pct", "pei@50pct", "hit_rate@25pct"} <= set(out)
+    assert {"mae", "rmse", "poisson_deviance", "pai@25pct", "pei@50pct", "hit_rate@25pct", "occ_f1", "occ_auc"} <= set(out)
     assert out["mae"] == pytest.approx(np.mean([0, 1, 0.5, 0]))

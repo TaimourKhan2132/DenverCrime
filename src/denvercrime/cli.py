@@ -18,11 +18,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("download", help="download the latest snapshot from Denver's FeatureServer")
     p = sub.add_parser("prepare", help="raw snapshot -> incidents -> panel -> features")
     p.add_argument("--raw", type=Path, help="raw .parquet or Hub .csv (default: newest in data/raw)")
-    sub.add_parser("backtest", help="train on train+val, score model and baselines on the test period")
+    sub.add_parser("explore", help="trends, seasonality, concentration and hotspot-stability figures")
+    sub.add_parser("ablate", help="validation-year feature-group ablation")
+    sub.add_parser("tune", help="validation-year hyperparameter search (Optuna)")
+    sub.add_parser("backtest", help="validation-year early stopping, then rolling test windows")
     p = sub.add_parser("maps", help="maps and plots for a backtest run")
     p.add_argument("--run", type=Path, help="run directory (default: latest)")
     p.add_argument("--week", help="Monday of the test week to map, YYYY-MM-DD (default: last)")
-    p = sub.add_parser("all", help="prepare + backtest + maps (does not download)")
+    p = sub.add_parser("all", help="prepare + explore + backtest + maps (does not download, ablate or tune)")
     p.add_argument("--raw", type=Path)
     return parser
 
@@ -44,12 +47,19 @@ def main(argv: list[str] | None = None) -> int:
         download(cfg)
     elif args.command == "prepare":
         pipeline.prepare(cfg, args.raw)
+    elif args.command == "explore":
+        pipeline.explore(cfg)
+    elif args.command == "ablate":
+        pipeline.ablate(cfg)
+    elif args.command == "tune":
+        pipeline.tune(cfg)
     elif args.command == "backtest":
         pipeline.backtest(cfg, args.config)
     elif args.command == "maps":
         pipeline.make_maps(cfg, args.run, args.week)
     elif args.command == "all":
         pipeline.prepare(cfg, args.raw)
+        pipeline.explore(cfg)
         run_dir = pipeline.backtest(cfg, args.config)
         pipeline.make_maps(cfg, run_dir)
     return 0

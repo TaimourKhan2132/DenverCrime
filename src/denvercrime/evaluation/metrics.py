@@ -1,4 +1,4 @@
-"""Count-error and hotspot metrics.
+"""Count-error, occurrence (accuracy/F1/AUC) and hotspot metrics.
 
 Hotspot metrics follow the crime-forecasting literature: each week, flag the highest-ranked
 cells until they cover a share `k` of the city's area, then measure what share of that week's
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from scipy.stats import rankdata
 
 TIE_BREAK_SEED = 0
 
@@ -31,6 +32,38 @@ def poisson_deviance(y: np.ndarray, pred: np.ndarray, eps: float = 1e-9) -> floa
     mu = np.clip(np.asarray(pred, dtype=np.float64), eps, None)
     ratio = np.divide(y, mu, out=np.ones_like(y), where=y > 0)
     return float(2.0 * np.mean(y * np.log(ratio) - (y - mu)))
+
+
+def roc_auc(labels: np.ndarray, scores: np.ndarray) -> float:
+    """Area under the ROC curve via the rank-sum (Mann-Whitney) formula, ties averaged."""
+    labels = np.asarray(labels, dtype=bool)
+    n_pos, n_neg = labels.sum(), (~labels).sum()
+    if n_pos == 0 or n_neg == 0:
+        return float("nan")
+    ranks = rankdata(scores)
+    return float((ranks[labels].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
+
+
+def occurrence_metrics(y: np.ndarray, pred: np.ndarray, threshold: float = 0.5) -> dict[str, float]:
+    """Classification view of a count forecast: "will this cell have at least one incident?"
+
+    A Poisson forecast with mean mu gives P(count >= 1) = 1 - exp(-mu); the cell is called
+    positive when that probability is at least `threshold`.
+    """
+    truth = np.asarray(y) >= 1
+    prob = 1.0 - np.exp(-np.clip(np.asarray(pred, dtype=np.float64), 0, None))
+    called = prob >= threshold
+    tp = float((called & truth).sum())
+    precision = tp / called.sum() if called.any() else 0.0
+    recall = tp / truth.sum() if truth.any() else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {
+        "occ_accuracy": float((called == truth).mean()),
+        "occ_precision": precision,
+        "occ_recall": recall,
+        "occ_f1": f1,
+        "occ_auc": roc_auc(truth, prob),
+    }
 
 
 def select_top_area(scores: np.ndarray, area: np.ndarray, share: float, rng: np.random.Generator) -> np.ndarray:
@@ -111,6 +144,7 @@ def evaluate(frame: pd.DataFrame, pred_col: str, y_col: str, hotspot_k: tuple[fl
         "poisson_deviance": poisson_deviance(y, pred),
         "mean_actual": float(y.mean()),
         "mean_pred": float(pred.mean()),
+        **occurrence_metrics(y, pred),
     }
     for k in hotspot_k:
         scores = hotspot_metrics(frame, pred_col, y_col, k)
