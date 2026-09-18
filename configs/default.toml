@@ -1,0 +1,77 @@
+# DenverCrime — default run configuration.
+# Paths are relative to the project root (the folder that contains `configs/`).
+
+[data]
+# Denver Open Data Catalog > "Crime" (NIBRS offenses, previous 5 calendar years + YTD, updated Mon–Fri).
+# Hub page: https://opendata-geospatialdenver.hub.arcgis.com/datasets/geospatialDenver::crime/about
+feature_server = "https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/arcgis/rest/services/ODC_CRIME_OFFENSES_P/FeatureServer/324"
+hub_csv_url = "https://opendata-geospatialdenver.hub.arcgis.com/api/download/v1/items/16d9c82bb36c4475bf87189cfaed653c/csv?layers=324"
+raw_dir = "data/raw"
+processed_dir = "data/processed"
+page_size = 2000                 # the service's maxRecordCount
+start_date = "2021-01-04"        # first Monday covered by the 5-year window at the time of writing
+# DPD: "Crimes that occurred at least 30 days ago tend to be the most accurate." Recent weeks are
+# still being back-filled, so they are excluded from training and evaluation.
+drop_recent_days = 30
+# Hub CSV exports shift FIRST_OCCURRENCE_DATE and REPORTED_DATE by +7 h relative to the API
+# (LAST_OCCURRENCE_DATE is not shifted). "auto" detects and undoes this; or set a number of hours.
+csv_time_shift_hours = "auto"
+
+[data.bbox]                      # generous box around the City and County of Denver (incl. DIA)
+min_lat = 39.60
+max_lat = 39.92
+min_lon = -105.12
+max_lon = -104.59
+
+# OFFENSE_CATEGORY_ID -> forecasting group. Every category in the data must appear exactly once.
+[groups]
+property = ["theft-from-motor-vehicle", "larceny", "auto-theft", "burglary", "arson"]
+person = ["aggravated-assault", "robbery", "murder", "other-crimes-against-persons"]
+society = ["drug-alcohol", "public-disorder"]
+other = ["all-other-crimes", "white-collar-crime"]
+
+[panel]
+h3_resolution = 8                # ~0.74 km² hexagons
+min_train_incidents = 10         # cells with fewer incidents in the training period are dropped
+
+[features]
+horizon = 1                      # predict week t using only data up to week t - horizon
+lags = [1, 2, 3, 4, 52]          # every lag must be >= horizon
+rolling_windows = [4, 13, 26, 52]
+neighbor_ring = 1                # H3 grid distance used for spatial-lag features
+
+[split]
+train_end = "2024-06-30"         # last day of the training period
+val_end = "2025-06-30"           # validation = (train_end, val_end]; test = after val_end
+min_history_weeks = 13           # drop the first weeks, where rolling features are mostly empty
+
+[model]
+targets = ["property", "person"]
+num_boost_round = 3000
+early_stopping_rounds = 100
+
+[model.lightgbm]
+objective = "poisson"
+learning_rate = 0.03
+num_leaves = 31
+min_data_in_leaf = 200
+feature_fraction = 0.8
+bagging_fraction = 0.8
+bagging_freq = 1
+lambda_l2 = 1.0
+seed = 42
+verbosity = -1
+
+[evaluation]
+hotspot_k = [0.01, 0.05, 0.10]   # share of city area flagged as hotspots each week
+baselines = [
+    "last_week",
+    "moving_average_4",
+    "moving_average_13",
+    "moving_average_52",
+    "seasonal_naive",
+    "historical_mean",
+]
+
+[output]
+runs_dir = "outputs/runs"
