@@ -44,6 +44,7 @@ def test_temporal_split_and_test_windows(prepared):
 def test_backtest_and_maps(prepared):
     cfg, _ = prepared
     run_dir = pipeline.backtest(cfg)
+    assert (run_dir / "evaluation_timeline.png").exists()
     summary = json.loads((run_dir / "summary.json").read_text())
     for target in cfg.model.targets:
         result = summary["targets"][target]

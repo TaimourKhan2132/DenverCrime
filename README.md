@@ -129,14 +129,20 @@ already a strong forecast, and any model has to beat it.
 ### 4.1 Pipeline
 
 ```mermaid
-flowchart LR
-    A[Denver FeatureServer<br/>380k offense rows] -->|download, keyset paging| B[raw snapshot]
-    B -->|clean: bbox, airport,<br/>institutions, 30-day lag| C[incidents<br/>one per incident x group]
-    C -->|H3 res 8 + week| D[panel: 430 cells x 292 weeks<br/>zeros included]
-    D -->|lagged features only| E[feature table]
-    E --> F[validation year:<br/>early stopping, ablation, tuning]
-    F --> G[test: 4 windows,<br/>retrain before each]
-    G --> H[metrics, paired tests,<br/>maps, plots]
+flowchart TB
+    subgraph data ["Data"]
+        direction LR
+        A["Denver FeatureServer<br/>380k offense rows"] --> B["Clean<br/>airport, institutions,<br/>30-day reporting lag"] --> C["Incidents<br/>one per incident and group"]
+    end
+    subgraph feat ["Features"]
+        direction LR
+        D["H3 panel<br/>430 cells x 292 weeks<br/>zeros included"] --> E["Lagged features<br/>history, EWM, neighbours,<br/>city-wide, calendar"]
+    end
+    subgraph model ["Modelling and evaluation"]
+        direction LR
+        F["Validation year<br/>early stopping,<br/>ablation, tuning"] --> G["4 test windows<br/>retrain before each"] --> H["Metrics, paired tests,<br/>maps"]
+    end
+    data --> feat --> model
 ```
 
 ### 4.2 Features
@@ -166,19 +172,7 @@ The final property model uses **21 features**; the person model uses 69.
 
 ### 4.4 Evaluation protocol
 
-```mermaid
-gantt
-    dateFormat YYYY-MM-DD
-    axisFormat %Y-%m
-    section Model selection
-    Train                                   :2021-04-05, 2024-06-30
-    Validation - early stopping, ablation, tuning :2024-07-01, 2025-06-30
-    section Test, retrained before each window
-    Window 1                                :2025-07-07, 2025-10-19
-    Window 2                                :2025-10-20, 2026-01-25
-    Window 3                                :2026-01-26, 2026-05-03
-    Window 4                                :2026-05-04, 2026-08-09
-```
+![Evaluation protocol: train, validation year, and four test windows each retrained on all earlier weeks](docs/evaluation_timeline.png)
 
 1. **Validation year (Jul 2024 – Jun 2025):** every choice is made here: number of boosting
    rounds, which feature groups to keep, and the hyperparameters.
@@ -359,7 +353,8 @@ place a Hub CSV export in `data/raw/`: `prepare` picks it up and corrects the ti
 
 **Each run writes** `metrics.md` (all tables: pooled, per window, paired, validation),
 `summary.json`, test predictions for every predictor, feature importance, LightGBM models in
-their native text format (no pickle), an interactive folium map, and PNG figures.
+their native text format (no pickle), the evaluation-timeline figure, an interactive folium map,
+and PNG figures.
 
 ## 8. Project structure and tests
 

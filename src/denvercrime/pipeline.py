@@ -17,7 +17,13 @@ from denvercrime.evaluation.backtest import MODEL_NAME, run_backtest, temporal_s
 from denvercrime.features.build import build_features
 from denvercrime.features.panel import assign_cells, build_panel, complete_weeks, count_column, select_cells
 from denvercrime.features.spatial import cell_table, neighbor_matrix
-from denvercrime.viz.maps import hex_map, plot_forecast_map, plot_hotspot_curve, plot_weekly_totals
+from denvercrime.viz.maps import (
+    hex_map,
+    plot_evaluation_timeline,
+    plot_forecast_map,
+    plot_hotspot_curve,
+    plot_weekly_totals,
+)
 
 log = logging.getLogger(__name__)
 
@@ -123,7 +129,9 @@ def backtest(cfg: Config, config_path: Path | None = None) -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
     if config_path:
         shutil.copy(config_path, run_dir / "config.toml")
-    run_backtest(frame, features, cfg, run_dir)
+    summary = run_backtest(frame, features, cfg, run_dir)
+    first_target = next(iter(summary["targets"].values()))
+    plot_evaluation_timeline(summary["split"], first_target["folds"], run_dir / "evaluation_timeline.png")
     log.info("Backtest written to %s", run_dir)
     return run_dir
 
