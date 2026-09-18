@@ -54,6 +54,40 @@ def hex_map(week_frame: pd.DataFrame, layers: dict[str, str], title: str, out_pa
     return out_path
 
 
+def draw_hexagons(ax, cells: pd.Series, values: pd.Series, cmap: str = "YlOrRd", vmax: float | None = None,
+                  label: str = "") -> None:
+    """Filled H3 hexagons on a matplotlib axis (lon/lat, aspect corrected for Denver's latitude)."""
+    from matplotlib.collections import PolyCollection
+
+    polys = [[(lon, lat) for lon, lat in cell_polygon(c)] for c in cells]
+    coll = PolyCollection(polys, array=np.asarray(values, dtype=float), cmap=cmap,
+                          edgecolors="white", linewidths=0.15)
+    coll.set_clim(0, vmax if vmax is not None else float(np.nanmax(values)) or 1.0)
+    ax.add_collection(coll)
+    ax.autoscale_view()
+    ax.set_aspect(1 / np.cos(np.radians(DENVER_CENTER[0])))
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for side in ax.spines.values():
+        side.set_visible(False)
+    plt.colorbar(coll, ax=ax, shrink=0.7, label=label)
+
+
+def plot_forecast_map(week_frame: pd.DataFrame, pred_col: str, y_col: str, title: str, out_path: Path) -> Path:
+    """Side-by-side static maps: forecast vs actual for one week."""
+    vmax = float(max(week_frame[pred_col].max(), week_frame[y_col].max())) or 1.0
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5.2))
+    draw_hexagons(axes[0], week_frame["cell"], week_frame[pred_col], vmax=vmax, label="expected incidents")
+    axes[0].set_title("Forecast (LightGBM)")
+    draw_hexagons(axes[1], week_frame["cell"], week_frame[y_col], vmax=vmax, label="incidents")
+    axes[1].set_title("What happened")
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
 def plot_weekly_totals(preds: pd.DataFrame, y_col: str, pred_cols: list[str], out_path: Path) -> Path:
     weekly = preds.groupby("week")[[y_col, *pred_cols]].sum()
     fig, ax = plt.subplots(figsize=(11, 4))
@@ -65,7 +99,7 @@ def plot_weekly_totals(preds: pd.DataFrame, y_col: str, pred_cols: list[str], ou
     ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(1.01, 1.0))
     ax.grid(alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=160)
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -84,6 +118,6 @@ def plot_hotspot_curve(preds: pd.DataFrame, y_col: str, pred_cols: list[str], ou
     ax.legend(frameon=False)
     ax.grid(alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=160)
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
     return out_path

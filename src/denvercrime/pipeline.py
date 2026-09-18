@@ -1,4 +1,4 @@
-"""End-to-end steps: prepare (raw -> features), backtest, and maps."""
+"""End-to-end steps: prepare, explore, ablate, tune, backtest and maps."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ import pandas as pd
 from denvercrime.config import Config
 from denvercrime.data.clean import clean_offenses, to_incidents
 from denvercrime.data.load import find_latest_raw, load_raw
-from denvercrime.evaluation.backtest import MODEL_NAME, run_backtest
+from denvercrime.evaluation.backtest import MODEL_NAME, run_backtest, temporal_split
 from denvercrime.features.build import build_features
 from denvercrime.features.panel import assign_cells, build_panel, complete_weeks, count_column, select_cells
 from denvercrime.features.spatial import cell_table, neighbor_matrix
-from denvercrime.viz.maps import hex_map, plot_hotspot_curve, plot_weekly_totals
+from denvercrime.viz.maps import hex_map, plot_forecast_map, plot_hotspot_curve, plot_weekly_totals
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +25,10 @@ FEATURES_FILE = "features.parquet"
 FEATURE_LIST_FILE = "feature_columns.json"
 INCIDENTS_FILE = "incidents.parquet"
 REPORT_FILE = "prepare_report.json"
+
+
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 def prepare(cfg: Config, raw_path: Path | None = None) -> dict:
@@ -46,8 +50,10 @@ def prepare(cfg: Config, raw_path: Path | None = None) -> dict:
     panel["area_km2"] = panel["cell"].map(info["area_km2"]).to_numpy()
 
     log.info("Building features for %d cells x %d weeks", len(cells), len(weeks))
-    neighbors = neighbor_matrix(cells, cfg.features.neighbor_ring)
-    frame, feature_cols = build_features(panel, groups, cfg.features, neighbors, info)
+    fcfg = cfg.features
+    neighbors = neighbor_matrix(cells, fcfg.neighbor_ring)
+    outer = neighbor_matrix(cells, fcfg.outer_ring, annulus=True) if fcfg.outer_ring else None
+    frame, feature_cols = build_features(panel, groups, fcfg, neighbors, info, outer)
 
     in_window = incidents[incidents["week"].isin(weeks)]
     report = {
@@ -84,9 +90,36 @@ def load_features(cfg: Config) -> tuple[pd.DataFrame, list[str]]:
     return frame, features
 
 
+def explore(cfg: Config, out_dir: Path | None = None) -> dict:
+    from denvercrime.viz.explore import explore as run_explore
+
+    frame, _ = load_features(cfg)
+    return run_explore(frame, list(cfg.groups), list(cfg.model.targets), out_dir or cfg.runs_dir.parent / "explore")
+
+
+def ablate(cfg: Config) -> Path:
+    from denvercrime.evaluation.selection import ablate as run_ablate
+
+    frame, features = load_features(cfg)
+    out_dir = cfg.runs_dir.parent / "ablation" / _timestamp()
+    run_ablate(temporal_split(frame, cfg), features, cfg, out_dir)
+    log.info("Ablation written to %s", out_dir)
+    return out_dir
+
+
+def tune(cfg: Config) -> Path:
+    from denvercrime.evaluation.selection import tune as run_tune
+
+    frame, features = load_features(cfg)
+    out_dir = cfg.runs_dir.parent / "tuning" / _timestamp()
+    run_tune(temporal_split(frame, cfg), features, cfg, out_dir)
+    log.info("Tuning written to %s; copy overrides.toml into the config to use it", out_dir)
+    return out_dir
+
+
 def backtest(cfg: Config, config_path: Path | None = None) -> Path:
     frame, features = load_features(cfg)
-    run_dir = cfg.runs_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = cfg.runs_dir / _timestamp()
     run_dir.mkdir(parents=True, exist_ok=True)
     if config_path:
         shutil.copy(config_path, run_dir / "config.toml")
@@ -103,7 +136,7 @@ def latest_run(cfg: Config) -> Path:
 
 
 def make_maps(cfg: Config, run_dir: Path | None = None, week: str | None = None) -> list[Path]:
-    """Hexagon map for one test week plus weekly-total and hotspot-curve plots, per target."""
+    """Interactive and static maps for one test week plus weekly-total and hotspot plots, per target."""
     run_dir = run_dir or latest_run(cfg)
     outputs = []
     for target in cfg.model.targets:
@@ -116,8 +149,9 @@ def make_maps(cfg: Config, run_dir: Path | None = None, week: str | None = None)
         layers = {"forecast (LightGBM)": MODEL_NAME, "actual": y_col}
         if "moving_average_52" in week_frame:
             layers["52-week average"] = "moving_average_52"
-        outputs.append(hex_map(week_frame, layers, f"{target} incidents, week of {chosen.date()}",
-                               run_dir / f"map_{target}_{chosen.date()}.html"))
+        title = f"{target} incidents, week of {chosen.date()}"
+        outputs.append(hex_map(week_frame, layers, title, run_dir / f"map_{target}_{chosen.date()}.html"))
+        outputs.append(plot_forecast_map(week_frame, MODEL_NAME, y_col, title, run_dir / f"forecast_map_{target}.png"))
         compare = [MODEL_NAME] + [b for b in ("moving_average_52", "last_week") if b in preds]
         outputs.append(plot_weekly_totals(preds, y_col, compare, run_dir / f"weekly_totals_{target}.png"))
         outputs.append(plot_hotspot_curve(preds, y_col, compare, run_dir / f"hotspot_curve_{target}.png"))

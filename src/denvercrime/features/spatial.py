@@ -27,16 +27,17 @@ def cell_table(cells: Iterable[str]) -> pd.DataFrame:
     )
 
 
-def neighbor_matrix(cells: list[str], ring: int) -> np.ndarray:
-    """Row-normalised adjacency: entry (i, j) = 1/deg(i) if cell j is within `ring` of cell i.
+def neighbor_matrix(cells: list[str], ring: int, annulus: bool = False) -> np.ndarray:
+    """Row-normalised adjacency: entry (i, j) = 1/deg(i) if cell j is a neighbour of cell i.
 
-    Only neighbours inside `cells` count, so edge cells average over fewer neighbours.
-    Cells with no neighbours in the set get an all-zero row.
+    Neighbours are cells within grid distance `ring` (excluding the cell itself), or exactly
+    at distance `ring` when `annulus` is True. Only neighbours inside `cells` count, so edge
+    cells average over fewer neighbours; cells with none get an all-zero row.
     """
     position = {c: i for i, c in enumerate(cells)}
     adj = np.zeros((len(cells), len(cells)), dtype=np.float64)
     for i, cell in enumerate(cells):
-        for other in h3.grid_disk(cell, ring):
+        for other in (h3.grid_ring(cell, ring) if annulus else h3.grid_disk(cell, ring)):
             j = position.get(other)
             if j is not None and j != i:
                 adj[i, j] = 1.0
