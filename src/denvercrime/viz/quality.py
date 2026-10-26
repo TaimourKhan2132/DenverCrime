@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from matplotlib.ticker import MaxNLocator
 
 from denvercrime.viz import finish_figure
 from denvercrime.viz.maps import plt
@@ -20,8 +21,9 @@ REMOVED_COLOR = "#d62728"
 def plot_cleaning_funnel(funnel: pd.DataFrame, out_path: Path | None = None):
     """Horizontal bars of the rows surviving each cleaning step (`profile.funnel_table`)."""
     steps = funnel.iloc[::-1]
+    names = steps["label"] if "label" in steps else steps["step"]
     fig, ax = plt.subplots(figsize=(9, 0.55 * len(funnel) + 1.2))
-    ax.barh(steps["step"], steps["rows"], color=KEPT_COLOR, height=0.62)
+    ax.barh(names, steps["rows"], color=KEPT_COLOR, height=0.62)
     span = steps["rows"].max() or 1
     for y, (rows, removed) in enumerate(zip(steps["rows"], steps["removed"])):
         label = f"{rows:,}" + (f"   −{removed:,}" if removed else "")
@@ -29,6 +31,7 @@ def plot_cleaning_funnel(funnel: pd.DataFrame, out_path: Path | None = None):
     ax.set_xlim(0, span * 1.18)
     ax.set_xlabel("offense rows remaining")
     ax.set_title("Cleaning funnel")
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.xaxis.set_major_formatter(lambda v, _: f"{v:,.0f}")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)

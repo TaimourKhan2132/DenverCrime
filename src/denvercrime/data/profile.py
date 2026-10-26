@@ -6,12 +6,36 @@ walkthrough notebook; they contain no filtering logic of their own.
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from denvercrime.config import Config
 from denvercrime.data.clean import CleaningReport
 
 NEIGHBORHOOD_PREFIX = "neighborhood"
+
+# Plain-English names for the cleaner's step labels, for charts and reports written for
+# readers outside the project. The technical label is always kept alongside.
+FRIENDLY_STEPS = {
+    "raw offenses": "Every offense in the file",
+    "IS_CRIME = 1 and IS_TRAFFIC = 0": "Crimes only, traffic cases removed",
+    "valid coordinates inside Denver bbox": "Has a usable map location in Denver",
+    "excluded neighbourhoods": "Airport removed",
+    "excluded institutional addresses": "Police HQ, jails and hospital removed",
+    "category mapped to a group": "Crime type recognised",
+}
+DATE_RANGE_STEP = re.compile(r"^occurred in \[(\S+), (\S+)\)$")
+
+
+def friendly_step(step: str) -> str:
+    """A step label a non-technical reader can follow; the original if there is no plain name."""
+    if step in FRIENDLY_STEPS:
+        return FRIENDLY_STEPS[step]
+    dates = DATE_RANGE_STEP.match(step)
+    if dates:
+        return f"Occurred between {dates.group(1)} and {dates.group(2)}"
+    return step
 
 
 def missing_value_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -26,13 +50,14 @@ def missing_value_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def funnel_table(report: CleaningReport) -> pd.DataFrame:
-    """Rows surviving each cleaning step, with how many that step removed."""
+    """Rows surviving each cleaning step, with a plain-English label and how many it removed."""
     steps = pd.DataFrame(report.steps, columns=["step", "rows"])
     if steps.empty:
-        return steps.assign(removed=[], pct_of_raw=[])
+        return steps.assign(label=[], removed=[], pct_of_raw=[])
+    steps["label"] = steps["step"].map(friendly_step)
     steps["removed"] = (steps["rows"].shift(1) - steps["rows"]).fillna(0).astype(int)
     steps["pct_of_raw"] = (100 * steps["rows"] / steps["rows"].iloc[0]).round(1)
-    return steps
+    return steps[["label", "rows", "removed", "pct_of_raw", "step"]]
 
 
 def excluded_places_table(cfg: Config, report: CleaningReport) -> pd.DataFrame:

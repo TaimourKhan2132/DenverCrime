@@ -3,7 +3,12 @@ import pandas as pd
 import pytest
 
 from denvercrime.data.clean import clean_offenses
-from denvercrime.data.profile import excluded_places_table, funnel_table, missing_value_table
+from denvercrime.data.profile import (
+    excluded_places_table,
+    friendly_step,
+    funnel_table,
+    missing_value_table,
+)
 from tests.conftest import add_dirty_rows
 
 
@@ -31,6 +36,23 @@ def test_funnel_table_reports_what_each_step_removed(raw_df, cfg):
     assert funnel["rows"].is_monotonic_decreasing
     assert funnel["pct_of_raw"].iloc[0] == 100.0
     assert funnel["pct_of_raw"].iloc[-1] < 100.0
+
+
+def test_every_cleaning_step_gets_a_plain_english_label(raw_df, cfg):
+    _, report = clean_offenses(add_dirty_rows(raw_df), cfg)
+    funnel = funnel_table(report)
+
+    assert list(funnel.columns)[:2] == ["label", "rows"]
+    assert funnel["label"].iloc[0] == "Every offense in the file"
+    assert "step" in funnel  # the technical label stays available
+    # No label still reads like code: no column names, operators or bracket ranges.
+    assert not funnel["label"].str.contains(r"IS_|=|\[|bbox", regex=True).any()
+
+
+def test_friendly_step_reads_the_dates_out_of_the_range_step():
+    assert friendly_step("occurred in [2021-01-04, 2026-08-15)") == \
+        "Occurred between 2021-01-04 and 2026-08-15"
+    assert friendly_step("some future step") == "some future step"
 
 
 def test_excluded_places_table_joins_the_configured_reasons(raw_df, cfg):
