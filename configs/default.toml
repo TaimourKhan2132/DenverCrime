@@ -26,10 +26,11 @@ max_lon = -104.59
 # Places where offenses are *recorded* rather than committed, or that are not neighbourhoods.
 # Each entry was checked on 2026-09-18; see the README "Data cleaning" section for the evidence.
 [cleaning]
-exclude_neighborhoods = [
-    "dia",                       # Denver International Airport: 5% of all incidents, mostly parking-lot theft
-]
+exclude_neighborhoods = ["dia"]
 long_window_days = 7             # offenses spanning longer than this are kept in their first week, and counted in the report
+
+[cleaning.exclude_neighborhood_reasons]
+dia = "Denver International Airport: 5% of all incidents, mostly parking-lot theft; not a neighbourhood"
 
 [[cleaning.exclude_addresses]]
 address = "1331 N CHEROKEE ST"
