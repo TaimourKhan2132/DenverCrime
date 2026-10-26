@@ -57,6 +57,15 @@ def normalize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def order_violations(df: pd.DataFrame, shift_hours: float = 0.0) -> int:
+    """Number of offenses that end before they start, after shifting FIRST by `shift_hours`.
+
+    Rows without a LAST_OCCURRENCE_DATE never count: comparisons against NaT are False.
+    """
+    first = df["FIRST_OCCURRENCE_DATE"] + pd.Timedelta(hours=shift_hours)
+    return int((df["LAST_OCCURRENCE_DATE"] < first).sum())
+
+
 def order_violation_rate(df: pd.DataFrame, shift_hours: float = 0.0) -> float:
     """Share of rows with a LAST_OCCURRENCE_DATE where LAST < FIRST after shifting FIRST."""
     has_last = df["LAST_OCCURRENCE_DATE"].notna() & df["FIRST_OCCURRENCE_DATE"].notna()
@@ -64,6 +73,26 @@ def order_violation_rate(df: pd.DataFrame, shift_hours: float = 0.0) -> float:
         return 0.0
     first = df.loc[has_last, "FIRST_OCCURRENCE_DATE"] + pd.Timedelta(hours=shift_hours)
     return float((df.loc[has_last, "LAST_OCCURRENCE_DATE"] < first).mean())
+
+
+def order_violation_summary(df: pd.DataFrame, shifts: tuple[float, ...] = SHIFT_CANDIDATES) -> pd.DataFrame:
+    """How many offenses end before they start, for each candidate correction.
+
+    `shift_hours = 0` describes the file as it stands; a non-zero row describes it after
+    shifting FIRST_OCCURRENCE_DATE (and REPORTED_DATE) by that many hours.
+    """
+    comparable = int((df["LAST_OCCURRENCE_DATE"].notna() & df["FIRST_OCCURRENCE_DATE"].notna()).sum())
+    return pd.DataFrame(
+        [
+            {
+                "shift_hours": float(s),
+                "violations": order_violations(df, s),
+                "violation_pct": round(100 * order_violation_rate(df, s), 2),
+                "comparable_rows": comparable,
+            }
+            for s in shifts
+        ]
+    )
 
 
 def detect_time_shift(df: pd.DataFrame, candidates: tuple[float, ...] = SHIFT_CANDIDATES) -> float:
