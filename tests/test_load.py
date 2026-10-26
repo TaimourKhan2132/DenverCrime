@@ -1,7 +1,14 @@
 import pandas as pd
 import pytest
 
-from denvercrime.data.load import detect_time_shift, load_raw, order_violation_rate
+from denvercrime.data.load import (
+    apply_time_shift,
+    detect_time_shift,
+    load_raw,
+    order_violation_rate,
+    order_violation_summary,
+    order_violations,
+)
 from denvercrime.schema import HUB_CSV_DATE_FORMAT
 
 
@@ -54,6 +61,33 @@ def test_violation_rate_explains_the_shift(raw_df):
     assert order_violation_rate(raw_df) == 0
     assert order_violation_rate(shifted) > 0.3
     assert detect_time_shift(shifted) == -7
+
+
+def test_order_violation_summary_tells_the_shift_story(raw_df):
+    """The +7 h Hub CSV shift makes offenses end before they start; the correction undoes it."""
+    shifted = apply_time_shift(raw_df, 7)
+    summary = order_violation_summary(shifted)
+    as_supplied = summary.loc[summary["shift_hours"] == 0].iloc[0]
+    corrected = summary.loc[summary["shift_hours"] == -7].iloc[0]
+
+    assert as_supplied["violations"] > 0 and corrected["violations"] == 0
+    assert as_supplied["violations"] == order_violations(shifted)
+    assert order_violations(raw_df) == 0  # the API snapshot is already consistent
+    assert (summary["comparable_rows"] == raw_df["LAST_OCCURRENCE_DATE"].notna().sum()).all()
+    assert as_supplied["violation_pct"] == pytest.approx(
+        100 * as_supplied["violations"] / as_supplied["comparable_rows"], abs=0.01
+    )
+
+
+def test_order_violations_ignores_rows_without_an_end_time():
+    first = pd.Timestamp("2024-05-01 10:00")
+    df = pd.DataFrame(
+        {
+            "FIRST_OCCURRENCE_DATE": [first, first, first],
+            "LAST_OCCURRENCE_DATE": [pd.NaT, first - pd.Timedelta(hours=1), first + pd.Timedelta(hours=1)],
+        }
+    )
+    assert order_violations(df) == 1
 
 
 def test_missing_required_column(raw_df, tmp_path):
