@@ -36,6 +36,9 @@ class CleaningConfig:
     exclude_neighborhoods: tuple[str, ...] = ()
     exclude_addresses: tuple[str, ...] = ()
     long_window_days: int = 7
+    # Why each place is excluded, keyed by normalised address or `neighborhood:<name>`.
+    # Documentation only: the filters use the tuples above.
+    exclude_reasons: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,15 @@ class Config:
                 exclude_neighborhoods=tuple(c.get("exclude_neighborhoods", ())),
                 exclude_addresses=tuple(normalize_address(e["address"]) for e in c.get("exclude_addresses", ())),
                 long_window_days=int(c.get("long_window_days", 7)),
+                exclude_reasons={
+                    normalize_address(e["address"]): e.get("reason", "")
+                    for e in c.get("exclude_addresses", ())
+                    if e.get("reason")
+                }
+                | {
+                    f"neighborhood:{name}": reason
+                    for name, reason in c.get("exclude_neighborhood_reasons", {}).items()
+                },
             ),
             groups={g: tuple(cats) for g, cats in raw["groups"].items()},
             panel=PanelConfig(**raw["panel"]),
