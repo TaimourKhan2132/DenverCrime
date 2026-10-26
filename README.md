@@ -24,6 +24,8 @@ crime-forecasting literature.
 | **A data bug** | The city's CSV export shifts two of three timestamps by exactly **+7 hours**. Found, measured and corrected automatically. |
 | **Ceiling** | The final model is within 9% (property) and 3% (person) of the error that pure randomness alone would produce. Extra features and tuning improved the validation year, but not the test windows. |
 
+📓 **[Data-cleaning walkthrough notebook](notebooks/data_cleaning_walkthrough.ipynb)** — the raw file, every problem found in it, each fix, and what the clean data shows, with charts.
+
 ## Contents
 
 1. [The question](#1-the-question)
